@@ -1,2 +1,1 @@
-# Database_Labs_Oracle
-Repo for database labs. Part II (Oracle)
+# Dovgun Victoriya | 053502
