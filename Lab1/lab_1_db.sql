@@ -80,7 +80,8 @@ BEGIN
     
     EXCEPTION 
         WHEN DUP_VAL_ON_INDEX THEN
-            dbms_output.put_line('such id already exists in the MyTable!');
+            dbms_output.put_line('id=' || TO_CHAR(new_id) || 
+                    ' already exists in the MyTable!');
             RETURN NULL;
         WHEN OTHERS THEN             
             dbms_output.put_line('something wrong!');
@@ -89,17 +90,30 @@ BEGIN
 END insert_command_output;
 
 BEGIN
-    dbms_output.put_line(insert_command_output(999));
+    dbms_output.put_line(insert_command_output(99999));
 END;
 
 -- 5) Create procedures that implement DML-operations
 --------------------------INSERT--------------------------
-CREATE OR REPLACE PROCEDURE insert_proc (id NUMBER, val NUMBER) IS
+CREATE OR REPLACE PROCEDURE insert_proc (new_id NUMBER, val NUMBER) IS
+    is_exists NUMBER;
 BEGIN
-    INSERT INTO MyTable VALUES(id, val);
-END insert_proc;
+    SELECT COUNT(id) INTO is_exists FROM MyTable WHERE id=new_id;
 
---DELETE FROM MyTable WHERE id=10001;
+    IF is_exists = 1 THEN
+        RAISE DUP_VAL_ON_INDEX;
+    ELSE
+        INSERT INTO MyTable VALUES(new_id, val);
+    END IF;
+    
+    EXCEPTION 
+        WHEN DUP_VAL_ON_INDEX THEN
+            dbms_output.put_line('id=' || TO_CHAR(new_id) || 
+                    ' already exists in the MyTable!');
+        WHEN OTHERS THEN             
+            dbms_output.put_line('something wrong!');
+
+END insert_proc;
 
 BEGIN
     insert_proc(10001, 0);
@@ -108,28 +122,57 @@ END;
 --SELECT * FROM MyTable WHERE id=10001;
 
 --------------------------UPDATE--------------------------
-CREATE OR REPLACE PROCEDURE update_proc (id NUMBER, new_val NUMBER) IS
+CREATE OR REPLACE PROCEDURE update_proc (need_id NUMBER, new_val NUMBER) IS
+    is_exists NUMBER;
 BEGIN
-    UPDATE MyTable SET val=new_val WHERE id=id;
+    SELECT COUNT(id) INTO is_exists FROM MyTable WHERE id=need_id;
+
+    IF is_exists = 1 THEN
+        UPDATE MyTable SET val=new_val WHERE id=need_id;
+    ELSE        
+        RAISE NO_DATA_FOUND;
+    END IF;    
+    
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            dbms_output.put_line('id=' || TO_CHAR(need_id) || 
+                    ' does not exists in the MyTable!');
+        WHEN OTHERS THEN             
+            dbms_output.put_line('something wrong!');
+            
 END update_proc;
 
 BEGIN
     update_proc(10001, 10);
 END;
 
-SELECT * FROM MyTable WHERE id=10001;
+--SELECT * FROM MyTable WHERE id=101;
 
 --------------------------DELETE--------------------------
-CREATE OR REPLACE PROCEDURE delete_proc (id NUMBER) IS
+CREATE OR REPLACE PROCEDURE delete_proc (need_id NUMBER) IS
+    is_exists NUMBER;
 BEGIN
-    DELETE FROM MyTable WHERE id=id;
+    SELECT COUNT(id) INTO is_exists FROM MyTable WHERE id=need_id;
+
+    IF is_exists = 1 THEN
+        DELETE FROM MyTable WHERE id=need_id;
+    ELSE        
+        RAISE NO_DATA_FOUND;
+    END IF;    
+    
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            dbms_output.put_line('id=' || TO_CHAR(need_id) || 
+                    ' does not exists in the MyTable!');
+        WHEN OTHERS THEN             
+            dbms_output.put_line('something wrong!');
+            
 END delete_proc;
 
 BEGIN
-    delete_proc(10001);
+    delete_proc(10000);
 END;
 
-SELECT * FROM MyTable ORDER BY id DESC;
 
 -- 6) Create function of salary sum per year
 --DECLARE 
