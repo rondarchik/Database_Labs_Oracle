@@ -22,8 +22,8 @@ BEGIN
             dbms_output.put_line('something wrong!');
 END;
 
-SELECT * FROM MyTable;
-SELECT COUNT(id) FROM MyTable;
+--SELECT * FROM MyTable;
+--SELECT COUNT(id) FROM MyTable;
 
 -- 3) Create function that returns TRUE, FALSE or EQUAL
 CREATE OR REPLACE FUNCTION check_parity RETURN VARCHAR2 IS
@@ -173,16 +173,40 @@ BEGIN
     delete_proc(10000);
 END;
 
+-- 6) Create function of salary sum per year   
+CREATE OR REPLACE FUNCTION year_revenue (salary IN VARCHAR2, 
+        premium_percent IN VARCHAR2) RETURN NUMBER IS
+    result NUMBER;
+    frac_percent FLOAT;
+    incorrect_percent_value EXCEPTION;
+    incorrect_type EXCEPTION;
+BEGIN
+    IF NOT(REGEXP_LIKE(salary, '^[0-9]+$')) OR 
+            NOT(REGEXP_LIKE(premium_percent, '^[0-9]+$')) THEN
+        RAISE incorrect_type;
+    ELSIF TO_NUMBER(premium_percent) < 0 OR TO_NUMBER(premium_percent) > 100 THEN
+        RAISE incorrect_percent_value;    
+    END IF;    
 
--- 6) Create function of salary sum per year
---DECLARE 
---    salary NUMBER;
---    premium NUMBER;
---    
---CREATE OR REPLACE FUNCTION year_revenue (salary IN NUMBER, premium IN NUMBER)
---        RETURN NUMBER IS
---    result NUMBER;
---BEGIN
---    
---    RETURN result;
---END year_revenue;    
+    frac_percent := TO_NUMBER(premium_percent) / 100;
+    result := (1 + frac_percent) * 12 * TO_NUMBER(salary);
+    
+    RETURN result;
+    
+    EXCEPTION 
+        WHEN incorrect_percent_value THEN
+            dbms_output.put_line('Premium percent must be in range of [0, 100]!'
+                    || CHR(10) || 'You entered: ' || TO_CHAR(premium_percent));
+            RETURN NULL;
+        WHEN incorrect_type THEN
+            dbms_output.put_line('An integer is required!');
+            RETURN NULL;
+        WHEN OTHERS THEN             
+            dbms_output.put_line('something wrong!');
+            RETURN NULL;
+    
+END year_revenue; 
+
+BEGIN
+    dbms_output.put_line(year_revenue(100, 30));
+END;
