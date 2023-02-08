@@ -51,8 +51,10 @@ BEGIN
     EXCEPTION 
         WHEN unknown_result THEN
             dbms_output.put_line('strange result ?_?');
+            RETURN NULL;
         WHEN OTHERS THEN    
             dbms_output.put_line('something wrong!');
+            RETURN NULL;
 
 END check_parity;
 
@@ -61,16 +63,33 @@ BEGIN
 END;
 
 -- 4) Create function that output INSERT-command
-CREATE OR REPLACE FUNCTION insert_command_output (id IN NUMBER) RETURN VARCHAR2 IS
+CREATE OR REPLACE FUNCTION insert_command_output (new_id IN NUMBER) RETURN VARCHAR2 IS
     result VARCHAR2(100);
+    is_exists NUMBER;
 BEGIN
-    result := 'INSERT INTO MyTable VALUES(' || TO_CHAR(id) || ',' 
-                        || TO_CHAR(dbms_random.RANDOM()) || ');';
+    SELECT COUNT(id) INTO is_exists FROM MyTable WHERE id=new_id;
+    
+    IF is_exists = 1 THEN
+        RAISE DUP_VAL_ON_INDEX;
+    ELSE    
+        result := 'INSERT INTO MyTable VALUES(' || TO_CHAR(new_id) || ',' 
+                            || TO_CHAR(dbms_random.RANDOM()) || ');';
+    END IF;
+    
     RETURN result;
+    
+    EXCEPTION 
+        WHEN DUP_VAL_ON_INDEX THEN
+            dbms_output.put_line('such id already exists in the MyTable!');
+            RETURN NULL;
+        WHEN OTHERS THEN             
+            dbms_output.put_line('something wrong!');
+            RETURN NULL;
+
 END insert_command_output;
 
 BEGIN
-    dbms_output.put_line(insert_command_output(9999));
+    dbms_output.put_line(insert_command_output(999));
 END;
 
 -- 5) Create procedures that implement DML-operations
