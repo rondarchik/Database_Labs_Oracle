@@ -10,14 +10,16 @@ CREATE TABLE MyTable (
 DECLARE 
     counter NUMBER;
 BEGIN
-    counter := 1;
+    SELECT COUNT(id) INTO counter FROM MyTable;
     
-    WHILE counter <= 10000
+    FOR i IN 1..10000
     LOOP
-        INSERT INTO MyTable VALUES (counter, dbms_random.RANDOM());
-        counter := counter + 1;
+        INSERT INTO MyTable VALUES ((counter + i), dbms_random.RANDOM());
     END LOOP;
-    
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            dbms_output.put_line('something wrong!');
 END;
 
 SELECT * FROM MyTable;
@@ -26,7 +28,7 @@ SELECT * FROM MyTable;
 CREATE OR REPLACE FUNCTION check_parity RETURN VARCHAR2 IS
     even NUMBER;
     odd NUMBER;
-    result VARCHAR2(20);
+    result VARCHAR2(5);
 BEGIN
     SELECT COUNT(val) INTO even FROM MyTable WHERE REMAINDER(val, 2) = 0;
     SELECT COUNT(val) INTO odd FROM MyTable WHERE REMAINDER(val, 2) = 1;
