@@ -23,25 +23,37 @@ BEGIN
 END;
 
 SELECT * FROM MyTable;
+SELECT COUNT(id) FROM MyTable;
 
 -- 3) Create function that returns TRUE, FALSE or EQUAL
 CREATE OR REPLACE FUNCTION check_parity RETURN VARCHAR2 IS
     even NUMBER;
     odd NUMBER;
     result VARCHAR2(5);
+    unknown_result EXCEPTION;
 BEGIN
+    -- REMAINDER(num2, num1) - returns the remainder of n2 divided by n1 
     SELECT COUNT(val) INTO even FROM MyTable WHERE REMAINDER(val, 2) = 0;
-    SELECT COUNT(val) INTO odd FROM MyTable WHERE REMAINDER(val, 2) = 1;
+    SELECT COUNT(val) INTO odd  FROM MyTable WHERE REMAINDER(val, 2) = 1;
 
     IF even > odd THEN
         result := 'TRUE';
     ELSIF even < odd THEN
         result := 'FALSE';
-    ELSE
+    ELSIF even = odd THEN
         result := 'EQUAL';
+    ELSE 
+        RAISE unknown_result;
     END IF;    
         
     RETURN result;
+    
+    EXCEPTION 
+        WHEN unknown_result THEN
+            dbms_output.put_line('strange result ?_?');
+        WHEN OTHERS THEN    
+            dbms_output.put_line('something wrong!');
+
 END check_parity;
 
 BEGIN
