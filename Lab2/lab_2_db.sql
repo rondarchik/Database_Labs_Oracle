@@ -6,7 +6,7 @@ DROP TABLE Groups;
 CREATE TABLE Groups (
     id NUMBER NOT NULL,
     name VARCHAR2(20) NOT NULL,
-    c_val NUMBER NOT NULL -- number of Students in the group
+    c_val NUMBER DEFAULT 0 NOT NULL -- number of Students in the group
 );
 
 CREATE TABLE Students (
@@ -14,6 +14,20 @@ CREATE TABLE Students (
     name VARCHAR2(20) NOT NULL,
     group_id NUMBER NOT NULL
 );
+
+-- 6) Implementation of trigger that update c_val in Groups
+CREATE OR REPLACE TRIGGER update_students_value_in_groups 
+    AFTER INSERT OR UPDATE OR DELETE ON Students FOR EACH ROW
+BEGIN
+    IF INSERTING THEN
+        UPDATE Groups SET c_val = c_val + 1 WHERE id = :NEW.group_id;
+    ELSIF UPDATING THEN
+            UPDATE Groups SET c_val = c_val - 1 WHERE id = :OLD.group_id;
+            UPDATE Groups SET c_val = c_val + 1 WHERE id = :NEW.group_id;
+    ELSIF DELETING THEN
+            UPDATE Groups SET c_val = c_val - 1 WHERE id = :OLD.group_id;
+    END IF;
+END;
 
 -- 2) Triggers implementation
 --------------------------Auto-increment key generation --------------------------
@@ -30,9 +44,6 @@ CREATE SEQUENCE id_auto_increment_for_students
     START WITH 1 
     INCREMENT BY 1 
     NOMAXVALUE;
-
-ALTER TABLE Students DISABLE ALL TRIGGERS;
-ALTER TABLE Groups DISABLE ALL TRIGGERS;
 
 --------------------------Students--------------------------
 CREATE OR REPLACE TRIGGER generate_students_id 
@@ -115,8 +126,6 @@ CREATE TABLE Students_table_logs (
     old_group_id NUMBER
 );
 
-ALTER TABLE Students_table_logs DISABLE ALL TRIGGERS;
-
 CREATE OR REPLACE TRIGGER students_logger 
     AFTER INSERT OR UPDATE OR DELETE ON Students FOR EACH ROW 
 DECLARE 
@@ -160,23 +169,8 @@ BEGIN
     END LOOP;
 END restore_data;
 
---------------------------interval--------------------------
+-- does it make sense?
 CREATE OR REPLACE PROCEDURE restore_data_by_time_interval(time_interval INTERVAL DAY TO SECOND) IS
 BEGIN
     restore_data(TO_TIMESTAMP(TO_CHAR(SYSDATE, 'DD-MON-YYYY HH:MI:SS AM')) - time_interval);
 END restore_data_by_time_interval;
-
- -- 6) Implementation of trigger that update c_val in Groups
-CREATE OR REPLACE TRIGGER update_students_value_in_groups 
-    AFTER INSERT OR UPDATE OR DELETE ON Students FOR EACH ROW
-BEGIN
-    CASE
-        WHEN INSERTING THEN
-            UPDATE Groups SET c_val = c_val + 1 WHERE id = :NEW.group_id;
-        WHEN UPDATING THEN
-            UPDATE Groups SET c_val = c_val - 1 WHERE id = :OLD.group_id;
-            UPDATE Groups SET c_val = c_val + 1 WHERE id = :NEW.group_id;
-        WHEN DELETING THEN
-            UPDATE Groups SET c_val = c_val - 1 WHERE id = :OLD.group_id;
-    END CASE;
-END;
