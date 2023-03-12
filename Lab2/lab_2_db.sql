@@ -31,6 +31,9 @@ CREATE SEQUENCE id_auto_increment_for_students
     INCREMENT BY 1 
     NOMAXVALUE;
 
+ALTER TABLE Students DISABLE ALL TRIGGERS;
+ALTER TABLE Groups DISABLE ALL TRIGGERS;
+
 --------------------------Students--------------------------
 CREATE OR REPLACE TRIGGER generate_students_id 
     BEFORE INSERT ON Students FOR EACH ROW
@@ -48,47 +51,32 @@ BEGIN
 END;
 
 --------------------------Integrity check (id uniqueness check)--------------------------
+-- 1) Students
 CREATE OR REPLACE TRIGGER check_unique_students_id 
-    BEFORE INSERT ON Students FOR EACH ROW
+    BEFORE INSERT OR UPDATE ON Students FOR EACH ROW
 DECLARE 
     is_exists NUMBER;
-    not_unique_value EXCEPTION;
 BEGIN
-    SELECT COUNT(id) INTO is_exists FROM Students
-        WHERE id=:NEW.id;
+    SELECT COUNT(*) INTO is_exists FROM Students WHERE id = :NEW.id;
         
-    IF is_exists != 0 THEN
-        RAISE not_unique_value;
+    IF is_exists > 0 THEN    
+        RAISE_APPLICATION_ERROR(-20000, 'DESCRIPTION: id = ' || :new.id 
+            || ' already exists in table Students!');  
     END IF;
-        
-    EXCEPTION
-        WHEN not_unique_value THEN
-            DBMS_OUTPUT.PUT_LINE('This id=' || TO_CHAR(:NEW.id)
-                || 'already exists in table Students!');
-        WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('something wrong!');
 END;
 
-
+-- 2) Groups
 CREATE OR REPLACE TRIGGER check_unique_gorup_id 
-    BEFORE INSERT ON Groups FOR EACH ROW
+    BEFORE INSERT OR UPDATE ON Groups FOR EACH ROW
 DECLARE 
     is_exists NUMBER;
-    not_unique_value EXCEPTION;
 BEGIN
-    SELECT COUNT(id) INTO is_exists FROM Groups
-        WHERE id=:NEW.id;
+    SELECT COUNT(*) INTO is_exists FROM Groups WHERE id = :NEW.id;
         
-    IF is_exists != 0 THEN
-        RAISE not_unique_value;
+    IF is_exists > 0 THEN    
+        RAISE_APPLICATION_ERROR(-20000, 'DESCRIPTION: id = ' || :new.id 
+            || ' already exists in table Groups!');  
     END IF;
-
-    EXCEPTION
-        WHEN not_unique_value THEN
-            DBMS_OUTPUT.PUT_LINE('This id=' || TO_CHAR(:NEW.id)
-                || 'already exists in table Groups!');
-        WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('something wrong!');
 END;
 
 --------------------------Uniqueness check (field: GROUP.name)--------------------------
@@ -96,21 +84,13 @@ CREATE OR REPLACE TRIGGER check_unique_group_name
     BEFORE INSERT OR UPDATE OF NAME ON Groups FOR EACH ROW 
 DECLARE 
     is_exists NUMBER;
-    not_unique_value EXCEPTION;
 BEGIN
-    SELECT COUNT(name) INTO is_exists FROM Groups
-        WHERE name=:NEW.name;
-        
-    IF is_exists != 0 THEN
-        RAISE not_unique_value;
+    SELECT COUNT(*) INTO is_exists FROM Groups WHERE name = :NEW.name;
+                
+    IF is_exists > 0 THEN    
+        RAISE_APPLICATION_ERROR(-20000, 'DESCRIPTION: name = ' || :new.name 
+            || ' already exists in table Students!');  
     END IF;
-        
-    EXCEPTION
-        WHEN not_unique_value THEN
-            DBMS_OUTPUT.PUT_LINE('This name=' || TO_CHAR(:NEW.name)
-                || 'already exists in table Groups!');
-        WHEN OTHERS THEN
-            DBMS_OUTPUT.PUT_LINE('something wrong!');
 END;
 
 -- 3) Foreign Key - trigger implementation
@@ -134,6 +114,8 @@ CREATE TABLE Students_table_logs (
     new_group_id NUMBER, 
     old_group_id NUMBER
 );
+
+ALTER TABLE Students_table_logs DISABLE ALL TRIGGERS;
 
 CREATE OR REPLACE TRIGGER students_logger 
     AFTER INSERT OR UPDATE OR DELETE ON Students FOR EACH ROW 
@@ -161,17 +143,17 @@ END;
  -- 5) Procedure for task 4
 CREATE OR REPLACE PROCEDURE restore_data(time TIMESTAMP) IS
 BEGIN
-    FOR action IN (SELECT * FROM Students_table_logs WHERE time < data_time ORDER BY id DESC)
+    FOR action IN (SELECT * FROM Students_table_logs WHERE time < date_time ORDER BY id DESC)
     LOOP
         CASE
-            WHEN action.description == 'INSERTING' THEN
+            WHEN action.description = 'INSERTING' THEN
                 DELETE FROM Students WHERE id = action.new_id;
-            WHEN action.description == 'UPDATING' THEN
+            WHEN action.description = 'UPDATING' THEN
                 UPDATE Students SET id = action.old_id,
                         name = action.old_name,
                         group_id = action.old_group_id
                     WHERE id = action.new_id;
-            WHEN action.description == 'DELETING' THEN
+            WHEN action.description = 'DELETING' THEN
                 INSERT INTO Students VALUES (
                     action.old_id, action.old_name, action.old_group_id);
         END CASE;
