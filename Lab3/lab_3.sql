@@ -15,14 +15,14 @@ CREATE OR REPLACE PROCEDURE compare_schemas(
 )
 IS
     is_table_exists BOOLEAN;
-    is_columns_exists BOOLEAN;
-    is_loops_exists BOOLEAN := FALSE;
+    is_column_exists BOOLEAN;
+    is_loop_exists BOOLEAN := FALSE;
 BEGIN
     -- get list of tables in dev-schema
     FOR dev_table IN (SELECT table_name FROM all_tables WHERE owner = dev_schema_name)
     LOOP
         is_table_exists := FALSE;
-        is_columns_exists := TRUE;
+        is_column_exists := TRUE;
 
         -- table is exists in prod-schema?
         FOR prod_table IN (SELECT table_name FROM all_tables WHERE owner = prod_schema_name)
@@ -31,7 +31,31 @@ BEGIN
                 is_table_exists := TRUE;
 
                 -- is table structure identical?
+                FOR dev_column IN (SELECT column_name, data_type, data_length, nullable FROM ALL_TAB_COLUMNS
+                                        WHERE owner = dev_schema_name AND table_name = dev_table.table_name)
+                LOOP
+                    is_column_exists := FALSE;
+
+                    FOR prod_column IN (SELECT column_name, data_type, data_length, nullable FROM ALL_TAB_COLUMNS
+                                            WHERE owner = prod_schema_name AND table_name = prod_table.table_name)
+                    LOOP
+                        IF dev_column.column_name = prod_column.column_name AND
+                            dev_column.data_type = prod_column.data_type AND
+                            dev_column.data_length = prod_column.data_length AND
+                            dev_column.nullable = prod_column.nullable THEN
+
+                            is_column_exists := TRUE;
+                            EXIT;
+                        END IF;
+                    END LOOP;
+
+                    EXIT WHEN is_column_exists = FALSE;
+                END LOOP;
+
+                EXIT;
             END IF;
         END LOOP;
+
+        
     END LOOP;
 END;
