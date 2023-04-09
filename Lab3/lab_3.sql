@@ -56,6 +56,24 @@ BEGIN
             END IF;
         END LOOP;
 
-        
+        -- tables output (if there are)
+        IF NOT is_table_exists OR NOT is_column_exists THEN
+            -- check loops
+            FOR item IN (SELECT * FROM all_constraints WHERE owner = dev_schema_name AND constraint_type = 'R')
+            LOOP
+                IF item.R_OWNER = prod_schema_name THEN
+                    is_loop_exists := TRUE;
+                    EXIT;
+                END IF;
+            END LOOP;
+
+            IF is_loop_exists THEN
+                dbms_output.put_line('Loop is detected in table: ' || dev_table.table_name);
+            ELSIF NOT is_table_exists THEN
+                dbms_output.put_line('Table ' || dev_table.table_name || ' does not exist in Prod schema');
+            ELSIF NOT is_column_exists THEN
+                dbms_output.put_line('Structure of the table ' || dev_table.table_name || ' is different from table in Prod schema');
+            END IF;
+        END IF;
     END LOOP;
 END;
