@@ -14,8 +14,24 @@ CREATE OR REPLACE PROCEDURE compare_schemas(
     prod_schema_name IN VARCHAR2
 )
 IS
-    tables BOOLEAN;
-    columns BOOLEAN;
-    loops BOOLEAN := FALSE;
+    is_table_exists BOOLEAN;
+    is_columns_exists BOOLEAN;
+    is_loops_exists BOOLEAN := FALSE;
 BEGIN
+    -- get list of tables in dev-schema
+    FOR dev_table IN (SELECT table_name FROM all_tables WHERE owner = dev_schema_name)
+    LOOP
+        is_table_exists := FALSE;
+        is_columns_exists := TRUE;
+
+        -- table is exists in prod-schema?
+        FOR prod_table IN (SELECT table_name FROM all_tables WHERE owner = prod_schema_name)
+        LOOP
+            IF dev_table.table_name = prod_table.table_name THEN
+                is_table_exists := TRUE;
+
+                -- is table structure identical?
+            END IF;
+        END LOOP;
+    END LOOP;
 END;
