@@ -16,6 +16,7 @@ CREATE OR REPLACE PROCEDURE compare_schemas(
 IS 
     tables_count NUMBER;
     is_table_exists BOOLEAN;
+    is_structure_diff BOOLEAN;
 BEGIN
     -- get number of tables in Dev-schema
     SELECT COUNT(*) INTO tables_count FROM ALL_TABLES WHERE OWNER = dev_schema_name;
@@ -29,12 +30,36 @@ BEGIN
     FOR dev_table IN (SELECT table_name FROM all_tables WHERE owner = dev_schema_name)
     LOOP
         is_table_exists := FALSE;
+        is_structure_diff := TRUE;
 
         -- table is exists in prod-schema?
         FOR prod_table IN (SELECT table_name FROM all_tables WHERE owner = prod_schema_name)
         LOOP
             IF dev_table.table_name = prod_table.table_name THEN
                 is_table_exists := TRUE;
+
+                -- is table structure different?
+                FOR dev_column IN (SELECT column_name, data_type, data_length, nullable FROM ALL_TAB_COLUMNS
+                                        WHERE owner = dev_schema_name AND table_name = dev_table.table_name)
+                LOOP
+                    is_structure_diff := FALSE;
+
+                    FOR prod_column IN (SELECT column_name, data_type, data_length, nullable FROM ALL_TAB_COLUMNS
+                                            WHERE owner = prod_schema_name AND table_name = prod_table.table_name)
+                    LOOP
+                        IF dev_column.column_name = prod_column.column_name AND
+                            dev_column.data_type = prod_column.data_type AND
+                            dev_column.data_length = prod_column.data_length AND
+                            dev_column.nullable = prod_column.nullable THEN
+
+                            is_structure_diff := TRUE;
+                            EXIT;
+                        END IF;
+                    END LOOP;
+
+                    EXIT WHEN is_structure_diff = FALSE;
+                END LOOP;
+
                 EXIT;
             END IF;
         END LOOP;
@@ -42,6 +67,8 @@ BEGIN
         -- tables output (if there are)
         IF NOT is_table_exists THEN
             dbms_output.put_line('Table ' || dev_table.table_name || ' does not exist in Prod schema');
+        ELSIF NOT is_structure_diff THEN
+            dbms_output.put_line('Structure of the table ' || dev_table.table_name || ' is different from table in Prod schema');
         -- ELSE
         --     dbms_output.put_line('All OK');
         END IF;
