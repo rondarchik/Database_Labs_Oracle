@@ -52,3 +52,27 @@ CREATE TABLE Prod.Table1 (id VARCHAR2(10));
 BEGIN
     COMPARE_SCHEMAS('DEV', 'PROD');
 END;
+
+-- Part 3: add detecting of loops
+-- Test 6: detecting cycles in foreign key constraint
+DROP TABLE Prod.Table1 CASCADE CONSTRAINTS;
+DROP TABLE Dev.Table1 CASCADE CONSTRAINTS;
+DROP TABLE Dev.Table2 CASCADE CONSTRAINTS;
+DROP TABLE Dev.Table3;
+
+CREATE TABLE Dev.Table1 (
+    id NUMBER PRIMARY KEY,
+    table2_id NUMBER
+);
+
+CREATE TABLE Dev.Table2 (
+    id NUMBER PRIMARY KEY,
+    table1_id NUMBER
+);
+
+ALTER TABLE Dev.Table1 ADD CONSTRAINT fk_t1_t2 FOREIGN KEY (table2_id) REFERENCES Dev.Table2(id);
+ALTER TABLE Dev.Table2 ADD CONSTRAINT fk_t2_t1 FOREIGN KEY (table1_id) REFERENCES Dev.Table1(id);
+
+BEGIN
+    COMPARE_SCHEMAS('DEV', 'PROD');
+END;
