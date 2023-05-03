@@ -10,15 +10,34 @@
 -- (необходимо учитывать foreign key в схеме). 
 -- В случае закольцованных связей выводить соответствующее сообщение
 
+DROP TABLE diff_tables;
+DROP TABLE out_tables;
+
+-- store 'list' of tables with differences in schemas
+CREATE TABLE diff_tables (
+    name VARCHAR2(100) NOT NULL,
+    description VARCHAR2(100)
+);
+
+-- store 'list' of tables without differences
+CREATE TABLE out_tables (
+    name VARCHAR2(100) NOT NULL,
+    description VARCHAR2(100)
+);
+
 CREATE OR REPLACE PROCEDURE compare_schemas(
     dev_schema_name IN VARCHAR2,
     prod_schema_name IN VARCHAR2
 )
 IS 
     tables_count NUMBER;
-    is_table_exists BOOLEAN;
-    is_structure_diff BOOLEAN;
-    is_cycle_detected BOOLEAN := FALSE;
+    columns_count NUMBER;
+
+    ref_table VARCHAR2(100);
+    ref_constraint VARCHAR2(100);
+    ref_tables_count NUMBER;
+
+    is_ref BOOLEAN := TRUE;
 BEGIN
     -- get number of tables in Dev-schema
     SELECT COUNT(*) INTO tables_count FROM ALL_TABLES WHERE OWNER = dev_schema_name;
@@ -29,67 +48,106 @@ BEGIN
     END IF;
 
      -- get list of tables in dev-schema
-    FOR dev_table IN (SELECT table_name FROM all_tables WHERE owner = dev_schema_name)
+    FOR tab IN (SELECT * FROM all_tables WHERE owner = dev_schema_name)
     LOOP
-        is_table_exists := FALSE;
-        is_structure_diff := TRUE;
-
+        -- get number of tables with same name in Prod-schema
+        SELECT COUNT(*) INTO tables_count FROM all_tables WHERE owner=prod_schema_name AND table_name=tab.table_name;
+        
         -- table is exists in prod-schema?
-        FOR prod_table IN (SELECT table_name FROM all_tables WHERE owner = prod_schema_name)
-        LOOP
-            IF dev_table.table_name = prod_table.table_name THEN
-                is_table_exists := TRUE;
+        IF tables_count = 1 THEN
+            FOR col IN (SELECT * FROM all_tab_columns WHERE table_name=tab.table_name AND owner=dev_schema_name)
+            LOOP
+                SELECT COUNT(*) INTO columns_count FROM all_tab_columns WHERE owner=prod_schema_name AND
+                                                                              column_name=col.column_name AND
+                                                                              data_type=col.data_type AND
+                                                                              data_length=col.data_length AND
+                                                                              nullable=col.nullable;
 
-                -- is table structure different?
-                FOR dev_column IN (SELECT column_name, data_type, data_length, nullable FROM ALL_TAB_COLUMNS
-                                        WHERE owner = dev_schema_name AND table_name = dev_table.table_name)
-                LOOP
-                    is_structure_diff := FALSE;
-
-                    FOR prod_column IN (SELECT column_name, data_type, data_length, nullable FROM ALL_TAB_COLUMNS
-                                            WHERE owner = prod_schema_name AND table_name = prod_table.table_name)
-                    LOOP
-                        IF dev_column.column_name = prod_column.column_name AND
-                            dev_column.data_type = prod_column.data_type AND
-                            dev_column.data_length = prod_column.data_length AND
-                            dev_column.nullable = prod_column.nullable THEN
-
-                            is_structure_diff := TRUE;
-                            EXIT;
-                        END IF;
-                    END LOOP;
-
-                    EXIT WHEN is_structure_diff = FALSE;
-                END LOOP;
-
-                EXIT;
-            END IF;
-        END LOOP;
-
-        -- check cycles
-        FOR record IN (SELECT * FROM all_constraints WHERE owner = dev_schema_name AND constraint_type = 'R')
-        LOOP
-            IF record.R_OWNER = dev_schema_name THEN
-                is_cycle_detected := TRUE;
-                EXIT;
-            END IF;
-        END LOOP;
-
-        -- tables output (if there are)
-        IF is_cycle_detected THEN
-            dbms_output.put_line('Cycle dependence is detected in table: ' || dev_table.table_name);
-        ELSIF NOT is_table_exists THEN
-            dbms_output.put_line('Table ' || dev_table.table_name || ' does not exist in Prod schema');
-        ELSIF NOT is_structure_diff THEN
-            dbms_output.put_line('Structure of the table ' || dev_table.table_name || ' is different from table in Prod schema');
-        -- ELSE
-        --     dbms_output.put_line('All OK');
+                IF columns_count = 0 THEN
+                -- -> tables structure is different
+                    INSERT INTO diff_tables VALUES(tab.table_name, 'structure');
+                END IF;
+                EXIT WHEN columns_count=0;
+            END LOOP;
+        ELSE
+            INSERT INTO diff_tables VALUES (tab.table_name, 'not exists');
         END IF;
+    END LOOP;
+
+    -- check fk & cycle 
+    SELECT COUNT(*) INTO tables_count FROM diff_tables;
+
+    WHILE tables_count != 0
+    LOOP
+        FOR tab IN (SELECT * FROM diff_tables) LOOP
+            FOR fk IN (SELECT * FROM all_constraints WHERE owner=dev_schema_name AND 
+                                        table_name=tab.name AND constraint_type='R')
+            LOOP
+                check_cycle(fk.r_constraint_name, dev_schema_name, fk.table_name);
+                
+                SELECT table_name INTO ref_table FROM all_constraints 
+                    WHERE constraint_name=fk.r_constraint_name;
+                
+                SELECT COUNT(*) INTO ref_tables_count FROM out_tables WHERE name=ref_table;
+
+                IF ref_tables_count = 0 THEN
+                    is_ref := FALSE;
+                END IF;
+            END LOOP;
+
+            IF is_ref THEN
+                DELETE FROM diff_tables WHERE name=tab.name;
+                INSERT INTO out_tables VALUES(tab.name, tab.description);
+            END IF;
+
+            is_ref := TRUE;
+
+        END LOOP;
+
+        SELECT COUNT(*) INTO tables_count FROM diff_tables;
 
     END LOOP;
+
+    SELECT COUNT(*) INTO tables_count FROM out_tables;
+    
+    IF tables_count = 0 THEN
+        dbms_output.put_line('There are no differences!');
+    ELSE
+        FOR tab IN (SELECT * FROM out_tables) LOOP
+            dbms_output.put_line(tab.name);
+        END LOOP;
+    END IF;
 
     EXCEPTION
         WHEN OTHERS THEN
             dbms_output.put_line('ERROR | ' || SQLERRM);
 
 END compare_schemas;
+
+CREATE OR REPLACE PROCEDURE check_cycle (
+    ref_constraint_name IN VARCHAR2,
+    dev_schema_name IN VARCHAR2,
+    start_table_name IN VARCHAR2,
+    cur_table_name IN VARCHAR2 DEFAULT NULL
+)
+IS 
+    ref_table_name VARCHAR2(100);
+BEGIN
+    IF cur_table_name IS NULL THEN
+        SELECT table_name INTO ref_table_name FROM all_constraints 
+            WHERE constraint_name=ref_constraint_name;
+    ELSE
+        SELECT table_name INTO ref_table_name FROM all_constraints 
+            WHERE constraint_name=ref_constraint_name AND table_name!=cur_table_name;
+    END IF;
+
+    IF ref_table_name = start_table_name THEN
+        RAISE_APPLICATION_ERROR(-20003, 'Loop detected in foreign keys for table ' || dev_schema_name ||
+                '.' || start_table_name || '!');
+    ELSE
+        FOR fk IN (SELECT * FROM all_constraints WHERE owner=dev_schema_name AND table_name=ref_table_name AND constraint_type='R')
+        LOOP
+            check_cycle(fk.r_constraint_name, dev_schema_name, start_table_name, ref_table_name);
+        END LOOP;
+    END IF;
+END check_cycle;
