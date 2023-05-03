@@ -64,6 +64,7 @@ DROP TABLE Dev.Table1;
 DROP TABLE Dev.Table2;
 DROP TABLE Dev.Table3;*/
 
+-- task 1
 DROP TABLE dev.groups;
 DROP TABLE prod.groups;
 DROP TABLE dev.students;
@@ -136,6 +137,61 @@ CREATE TABLE Dev.Task (
 
 ALTER TABLE Dev.Department ADD CONSTRAINT FK_Department_Task FOREIGN KEY(id)
     REFERENCES Dev.Task(id);
+
+BEGIN
+    COMPARE_SCHEMAS('DEV', 'PROD');
+END;
+
+-- task 2
+DROP TABLE diff_tables;
+DROP TABLE out_tables;
+
+CREATE TABLE diff_tables (
+    name VARCHAR2(100) NOT NULL,
+    description VARCHAR2(100)
+);
+
+CREATE TABLE out_tables (
+    name VARCHAR2(100) NOT NULL,
+    description VARCHAR2(100)
+);
+
+DROP FUNCTION dev.test_func;
+DROP FUNCTION prod.test_func;
+DROP PROCEDURE prod.test_proc;
+DROP PROCEDURE dev.test_proc;
+
+CREATE OR REPLACE FUNCTION dev.test_func
+    RETURN NUMBER
+IS
+    val1 NUMBER;
+    val2 NUMBER;
+BEGIN
+    dbms_output.put_line('dev.test_func');
+    RETURN 1;
+END test_func;
+
+CREATE OR REPLACE FUNCTION prod.test_func(
+    param1 IN NUMBER,
+    param2 IN VARCHAR2
+) RETURN NUMBER
+IS
+    val1 NUMBER;
+    val2 NUMBER;
+BEGIN
+    dbms_output.put_line('prod.test_func');
+    RETURN 1;
+END test_func;
+
+CREATE OR REPLACE PROCEDURE dev.test_proc(
+    param1 IN NUMBER,
+    param2 IN VARCHAR2
+) 
+IS
+    val NUMBER;
+BEGIN
+    dbms_output.put_line('dev.test_proc');
+END test_proc;
 
 BEGIN
     COMPARE_SCHEMAS('DEV', 'PROD');

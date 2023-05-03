@@ -1,15 +1,3 @@
--- Task 1
--- Написать процедуру/функцию на вход которой подаются 
--- два текстовых параметра (dev_schema_name, prod_schema_name), 
--- которые являются названиями схем баз данных 
--- (условно схема для разработки(Dev) и промышленная схема(Prod)), 
--- на выход процедура должна предоставить перечень таблиц, 
--- которые есть в схеме Dev, но нет в Prod, либо в которых различается 
--- структура таблиц. Наименования таблиц должны быть отсортированы в 
--- соответствии с очередностью их возможного создания в схеме prod 
--- (необходимо учитывать foreign key в схеме). 
--- В случае закольцованных связей выводить соответствующее сообщение
-
 DROP TABLE diff_tables;
 DROP TABLE out_tables;
 
@@ -38,83 +26,175 @@ IS
     ref_tables_count NUMBER;
 
     is_ref BOOLEAN := TRUE;
+
+    func_count NUMBER;
+    f1_arg_count NUMBER;
+    f2_arg_count NUMBER;
+    arg_count NUMBER;
 BEGIN
+    dbms_output.put_line('_______________ Tables Info _______________');
     -- get number of tables in Dev-schema
     SELECT COUNT(*) INTO tables_count FROM ALL_TABLES WHERE OWNER = dev_schema_name;
 
     -- if there are no tables in Dev-schema -> STOP
     IF tables_count = 0 THEN
-        RAISE_APPLICATION_ERROR(-20002, 'Schema ' || dev_schema_name || ' does not contain tables.');
-    END IF;
-
-     -- get list of tables in dev-schema
-    FOR tab IN (SELECT * FROM all_tables WHERE owner = dev_schema_name)
-    LOOP
-        -- get number of tables with same name in Prod-schema
-        SELECT COUNT(*) INTO tables_count FROM all_tables WHERE owner=prod_schema_name AND table_name=tab.table_name;
+        dbms_output.put_line('Schema ' || dev_schema_name || ' does not contain tables.');
+        -- RAISE_APPLICATION_ERROR(-20002, 'Schema ' || dev_schema_name || ' does not contain tables.');
+    ELSE
+         -- get list of tables in dev-schema
+        FOR tab IN (SELECT * FROM all_tables WHERE owner = dev_schema_name)
+        LOOP
+            -- get number of tables with same name in Prod-schema
+            SELECT COUNT(*) INTO tables_count FROM all_tables WHERE owner=prod_schema_name AND table_name=tab.table_name;
         
-        -- table is exists in prod-schema?
-        IF tables_count = 1 THEN
-            FOR col IN (SELECT * FROM all_tab_columns WHERE table_name=tab.table_name AND owner=dev_schema_name)
-            LOOP
-                SELECT COUNT(*) INTO columns_count FROM all_tab_columns WHERE owner=prod_schema_name AND
-                                                                              column_name=col.column_name AND
-                                                                              data_type=col.data_type AND
-                                                                              data_length=col.data_length AND
-                                                                              nullable=col.nullable;
+            -- table is exists in prod-schema?
+            IF tables_count = 1 THEN
+                FOR col IN (SELECT * FROM all_tab_columns WHERE table_name=tab.table_name AND owner=dev_schema_name)
+                LOOP
+                    SELECT COUNT(*) INTO columns_count FROM all_tab_columns WHERE owner=prod_schema_name AND
+                                                                                  column_name=col.column_name AND
+                                                                                  data_type=col.data_type AND
+                                                                                  data_length=col.data_length AND
+                                                                                  nullable=col.nullable;
 
-                IF columns_count = 0 THEN
-                -- -> tables structure is different
-                    INSERT INTO diff_tables VALUES(tab.table_name, 'structure');
-                END IF;
-                EXIT WHEN columns_count=0;
-            END LOOP;
-        ELSE
-            INSERT INTO diff_tables VALUES (tab.table_name, 'not exists');
-        END IF;
-    END LOOP;
-
-    -- check fk & cycle 
-    SELECT COUNT(*) INTO tables_count FROM diff_tables;
-
-    WHILE tables_count != 0
-    LOOP
-        FOR tab IN (SELECT * FROM diff_tables) LOOP
-            FOR fk IN (SELECT * FROM all_constraints WHERE owner=dev_schema_name AND 
-                                        table_name=tab.name AND constraint_type='R')
-            LOOP
-                check_cycle(fk.r_constraint_name, dev_schema_name, fk.table_name);
-                
-                SELECT table_name INTO ref_table FROM all_constraints 
-                    WHERE constraint_name=fk.r_constraint_name;
-                
-                SELECT COUNT(*) INTO ref_tables_count FROM out_tables WHERE name=ref_table;
-
-                IF ref_tables_count = 0 THEN
-                    is_ref := FALSE;
-                END IF;
-            END LOOP;
-
-            IF is_ref THEN
-                DELETE FROM diff_tables WHERE name=tab.name;
-                INSERT INTO out_tables VALUES(tab.name, tab.description);
+                    IF columns_count = 0 THEN
+                    -- -> tables structure is different
+                        INSERT INTO diff_tables VALUES(tab.table_name, 'structure');
+                    END IF;
+                    EXIT WHEN columns_count=0;
+                END LOOP;
+            ELSE
+                INSERT INTO diff_tables VALUES (tab.table_name, 'not exists');
             END IF;
+        END LOOP;
 
-            is_ref := TRUE;
+        -- check fk & cycle 
+        SELECT COUNT(*) INTO tables_count FROM diff_tables;
+
+        WHILE tables_count != 0
+        LOOP
+            FOR tab IN (SELECT * FROM diff_tables) LOOP
+                FOR fk IN (SELECT * FROM all_constraints WHERE owner=dev_schema_name AND 
+                                            table_name=tab.name AND constraint_type='R')
+                LOOP
+                    check_cycle(fk.r_constraint_name, dev_schema_name, fk.table_name);
+
+                    SELECT table_name INTO ref_table FROM all_constraints 
+                        WHERE constraint_name=fk.r_constraint_name;
+
+                    SELECT COUNT(*) INTO ref_tables_count FROM out_tables WHERE name=ref_table;
+
+                    IF ref_tables_count = 0 THEN
+                        is_ref := FALSE;
+                    END IF;
+                END LOOP;
+
+                IF is_ref THEN
+                    DELETE FROM diff_tables WHERE name=tab.name;
+                    INSERT INTO out_tables VALUES(tab.name, tab.description);
+                END IF;
+
+                is_ref := TRUE;
+
+            END LOOP;
+
+            SELECT COUNT(*) INTO tables_count FROM diff_tables;
 
         END LOOP;
 
-        SELECT COUNT(*) INTO tables_count FROM diff_tables;
+        SELECT COUNT(*) INTO tables_count FROM out_tables;
 
-    END LOOP;
+        IF tables_count = 0 THEN
+            dbms_output.put_line('There are no differences!');
+        ELSE
+            FOR tab IN (SELECT * FROM out_tables) LOOP
+                dbms_output.put_line(tab.name);
+            END LOOP;
+        END IF;
+    END IF;
 
-    SELECT COUNT(*) INTO tables_count FROM out_tables;
+    dbms_output.put_line(' ');
+    dbms_output.put_line('_____________ Procedures Info _____________');
+    -- get number of procedures in Dev-schema
+    SELECT COUNT(*) INTO func_count FROM all_objects WHERE owner=dev_schema_name AND object_type='PROCEDURE';
     
-    IF tables_count = 0 THEN
-        dbms_output.put_line('There are no differences!');
+    -- if there are no procedures in Dev-schema -> STOP
+    IF func_count = 0 THEN
+        -- RAISE_APPLICATION_ERROR(-20002, 'Schema ' || dev_schema_name || ' does not contain procedures.');
+        dbms_output.put_line('Schema ' || dev_schema_name || ' does not contain procedures.');
     ELSE
-        FOR tab IN (SELECT * FROM out_tables) LOOP
-            dbms_output.put_line(tab.name);
+        FOR proc IN (SELECT * FROM all_objects WHERE owner=dev_schema_name AND object_type='PROCEDURE')
+        LOOP
+            SELECT COUNT(*) INTO func_count FROM all_objects WHERE owner=prod_schema_name AND 
+                                object_type='PROCEDURE' AND object_name=proc.object_name;
+
+            IF func_count = 0 THEN
+                dbms_output.put_line(proc.object_name || ' not exists in Prod-schema');
+            ELSE
+                SELECT COUNT(*) INTO f1_arg_count FROM all_arguments WHERE owner=dev_schema_name AND object_name=proc.object_name;
+                SELECT COUNT(*) INTO f2_arg_count FROM all_arguments WHERE owner=prod_schema_name AND object_name=proc.object_name;
+
+                IF f1_arg_count != f2_arg_count THEN
+                    dbms_output.put_line(proc.object_name || ' has different arguments');
+                ELSE
+                    FOR arg IN (SELECT * FROM all_arguments WHERE owner=dev_schema_name AND object_name=proc.object_name)
+                    LOOP
+                        SELECT COUNT(*) INTO arg_count FROM all_arguments WHERE owner=prod_schema_name AND 
+                                                object_name=proc.object_name AND data_type=arg.data_type;
+
+                        IF arg_count = 0 THEN
+                            dbms_output.put_line(proc.object_name || ' has different arguments data types');
+                        END IF;
+                    END LOOP;
+                END IF;
+            END IF;
+        END LOOP;
+    END IF;
+
+    dbms_output.put_line(' ');
+    dbms_output.put_line('_____________ Functions  Info _____________');
+    -- get number of functions in Dev-schema
+    SELECT COUNT(*) INTO func_count FROM all_objects WHERE owner=dev_schema_name AND object_type='FUNCTION';
+    
+    -- if there are no functions in Dev-schema -> STOP
+    IF func_count = 0 THEN
+        -- RAISE_APPLICATION_ERROR(-20002, 'Schema ' || dev_schema_name || ' does not contain functions.');
+        dbms_output.put_line('Schema ' || dev_schema_name || ' does not contain functions.');
+    ELSE
+        FOR func IN (SELECT * FROM all_objects WHERE owner=dev_schema_name AND object_type='FUNCTION')
+        LOOP
+            SELECT COUNT(*) INTO func_count FROM all_objects WHERE owner=prod_schema_name AND 
+                                object_type='FUNCTION' AND object_name=func.object_name;
+
+            IF func_count = 0 THEN
+                dbms_output.put_line(func.object_name || ' not exists in Prod-schema');
+            ELSE
+                SELECT COUNT(*) INTO f1_arg_count FROM all_arguments WHERE owner=dev_schema_name AND object_name=func.object_name;
+                SELECT COUNT(*) INTO f2_arg_count FROM all_arguments WHERE owner=prod_schema_name AND object_name=func.object_name;
+
+                IF f1_arg_count != f2_arg_count THEN
+                    dbms_output.put_line(func.object_name || ' has different arguments');
+                ELSE
+                    FOR arg IN (SELECT * FROM all_arguments WHERE owner=dev_schema_name AND object_name=func.object_name)
+                    LOOP
+                        IF arg.position = 0 THEN  -- return value?
+                            SELECT COUNT(*) INTO arg_count FROM all_arguments WHERE owner=prod_schema_name AND 
+                                                object_name=func.object_name AND data_type=arg.data_type AND position=0;
+
+                            IF arg_count = 0 THEN
+                                dbms_output.put_line(func.object_name || ' has different arguments data types');
+                            END IF;
+                        ELSE
+                            SELECT COUNT(*) INTO arg_count FROM all_arguments WHERE owner=prod_schema_name AND 
+                                                object_name=func.object_name AND data_type=arg.data_type;
+
+                            IF arg_count = 0 THEN
+                                dbms_output.put_line(func.object_name || ' has different arguments data types');
+                            END IF;
+                        END IF;
+                    END LOOP;
+                END IF;
+            END IF;
         END LOOP;
     END IF;
 
