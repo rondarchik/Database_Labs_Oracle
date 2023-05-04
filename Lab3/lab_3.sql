@@ -27,12 +27,15 @@ IS
 
     is_ref BOOLEAN := TRUE;
 
-    func_count NUMBER;
+    obj_count NUMBER;
     f1_arg_count NUMBER;
     f2_arg_count NUMBER;
     arg_count NUMBER;
+
+    is_exists BOOLEAN;
 BEGIN
     dbms_output.put_line('_______________ Tables Info _______________');
+    dbms_output.put_line(' ');
     -- get number of tables in Dev-schema
     SELECT COUNT(*) INTO tables_count FROM ALL_TABLES WHERE OWNER = dev_schema_name;
 
@@ -42,7 +45,7 @@ BEGIN
         -- RAISE_APPLICATION_ERROR(-20002, 'Schema ' || dev_schema_name || ' does not contain tables.');
     ELSE
          -- get list of tables in dev-schema
-        FOR tab IN (SELECT * FROM all_tables WHERE owner = dev_schema_name)
+        FOR tab IN (SELECT * FROM all_tables WHERE owner=dev_schema_name)
         LOOP
             -- get number of tables with same name in Prod-schema
             SELECT COUNT(*) INTO tables_count FROM all_tables WHERE owner=prod_schema_name AND table_name=tab.table_name;
@@ -115,20 +118,21 @@ BEGIN
 
     dbms_output.put_line(' ');
     dbms_output.put_line('_____________ Procedures Info _____________');
+    dbms_output.put_line(' ');
     -- get number of procedures in Dev-schema
-    SELECT COUNT(*) INTO func_count FROM all_objects WHERE owner=dev_schema_name AND object_type='PROCEDURE';
+    SELECT COUNT(*) INTO obj_count FROM all_objects WHERE owner=dev_schema_name AND object_type='PROCEDURE';
     
     -- if there are no procedures in Dev-schema -> STOP
-    IF func_count = 0 THEN
+    IF obj_count = 0 THEN
         -- RAISE_APPLICATION_ERROR(-20002, 'Schema ' || dev_schema_name || ' does not contain procedures.');
         dbms_output.put_line('Schema ' || dev_schema_name || ' does not contain procedures.');
     ELSE
         FOR proc IN (SELECT * FROM all_objects WHERE owner=dev_schema_name AND object_type='PROCEDURE')
         LOOP
-            SELECT COUNT(*) INTO func_count FROM all_objects WHERE owner=prod_schema_name AND 
+            SELECT COUNT(*) INTO obj_count FROM all_objects WHERE owner=prod_schema_name AND 
                                 object_type='PROCEDURE' AND object_name=proc.object_name;
 
-            IF func_count = 0 THEN
+            IF obj_count = 0 THEN
                 dbms_output.put_line(proc.object_name || ' not exists in Prod-schema');
             ELSE
                 SELECT COUNT(*) INTO f1_arg_count FROM all_arguments WHERE owner=dev_schema_name AND object_name=proc.object_name;
@@ -153,20 +157,21 @@ BEGIN
 
     dbms_output.put_line(' ');
     dbms_output.put_line('_____________ Functions  Info _____________');
+    dbms_output.put_line(' ');
     -- get number of functions in Dev-schema
-    SELECT COUNT(*) INTO func_count FROM all_objects WHERE owner=dev_schema_name AND object_type='FUNCTION';
+    SELECT COUNT(*) INTO obj_count FROM all_objects WHERE owner=dev_schema_name AND object_type='FUNCTION';
     
     -- if there are no functions in Dev-schema -> STOP
-    IF func_count = 0 THEN
+    IF obj_count = 0 THEN
         -- RAISE_APPLICATION_ERROR(-20002, 'Schema ' || dev_schema_name || ' does not contain functions.');
         dbms_output.put_line('Schema ' || dev_schema_name || ' does not contain functions.');
     ELSE
         FOR func IN (SELECT * FROM all_objects WHERE owner=dev_schema_name AND object_type='FUNCTION')
         LOOP
-            SELECT COUNT(*) INTO func_count FROM all_objects WHERE owner=prod_schema_name AND 
+            SELECT COUNT(*) INTO obj_count FROM all_objects WHERE owner=prod_schema_name AND 
                                 object_type='FUNCTION' AND object_name=func.object_name;
 
-            IF func_count = 0 THEN
+            IF obj_count = 0 THEN
                 dbms_output.put_line(func.object_name || ' not exists in Prod-schema');
             ELSE
                 SELECT COUNT(*) INTO f1_arg_count FROM all_arguments WHERE owner=dev_schema_name AND object_name=func.object_name;
@@ -193,6 +198,46 @@ BEGIN
                             END IF;
                         END IF;
                     END LOOP;
+                END IF;
+            END IF;
+        END LOOP;
+    END IF;
+
+    dbms_output.put_line(' ');
+    dbms_output.put_line('______________ Packages  Info _____________');
+    dbms_output.put_line(' ');
+    -- get number of indexes in Dev-schema
+    SELECT COUNT(*) INTO obj_count FROM all_ind_columns WHERE index_owner=dev_schema_name; -- AND object_type='PACKAGE';
+    
+    -- if there are no packages in Dev-schema -> STOP
+    IF obj_count = 0 THEN
+        -- RAISE_APPLICATION_ERROR(-20002, 'Schema ' || dev_schema_name || ' does not contain procedures.');
+        dbms_output.put_line('Schema ' || dev_schema_name || ' does not contain package indexes.');
+    ELSE
+        FOR dev_index IN (SELECT * FROM all_ind_columns WHERE index_owner=dev_schema_name)
+        LOOP
+            is_exists := FALSE;
+            SELECT COUNT(*) INTO obj_count FROM all_ind_columns WHERE index_owner=prod_schema_name;
+
+            IF obj_count = 0 THEN
+                dbms_output.put_line('Index ' || dev_index.index_name || ' not exists in Prod-schema');
+            ELSE
+                FOR prod_index IN (SELECT * FROM all_ind_columns WHERE index_owner=prod_schema_name)
+                LOOP
+                    IF dev_index.index_name = prod_index.index_name THEN
+                        IF dev_index.table_name = prod_index.table_name THEN
+                            IF dev_index.column_name = prod_index.column_name THEN
+                                is_exists := TRUE;
+                            END IF;
+                        END IF; 
+                    END IF;
+                END LOOP;
+
+                IF is_exists = FALSE THEN
+                    IF SUBSTR(dev_index.index_name, 1, 3) != 'BIN' AND
+                        SUBSTR(dev_index.index_name, 1, 3) != 'SYS' THEN
+                        dbms_output.put_line('Index ' || dev_index.index_name || ' not exists in Prod-schema');
+                    END IF;
                 END IF;
             END IF;
         END LOOP;

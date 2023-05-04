@@ -196,3 +196,24 @@ END test_proc;
 BEGIN
     COMPARE_SCHEMAS('DEV', 'PROD');
 END;
+
+DROP TABLE Dev.test_table;
+DROP TABLE Prod.test_table;
+
+CREATE TABLE Dev.test_table (
+    id NUMBER PRIMARY KEY,
+    name VARCHAR2(100)
+);
+
+CREATE TABLE Prod.test_table (
+    id NUMBER PRIMARY KEY,
+    name VARCHAR2(100)
+);
+
+DROP INDEX Dev.test_table_idx2;
+
+CREATE INDEX Dev.test_table_idx1 ON Dev.test_table(name);
+
+BEGIN
+    COMPARE_SCHEMAS('DEV', 'PROD');
+END;
