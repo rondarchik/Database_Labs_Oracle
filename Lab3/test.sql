@@ -217,3 +217,35 @@ CREATE INDEX Dev.test_table_idx1 ON Dev.test_table(name);
 BEGIN
     COMPARE_SCHEMAS('DEV', 'PROD');
 END;
+
+-- task 3
+
+DROP TABLE Dev.test_table;
+DROP TABLE Dev.test_table2;
+DROP TABLE Prod.test_table;
+DROP TABLE Prod.test_table2;
+
+CREATE TABLE Dev.test_table (id NUMBER);
+CREATE TABLE Dev.test_table2 (id NUMBER);
+
+CREATE TABLE Prod.test_table (id NUMBER);
+CREATE TABLE Prod.test_table2 (id NUMBER);
+
+DROP TABLE diff_tables;
+DROP TABLE out_tables;
+
+CREATE TABLE diff_tables (
+    name VARCHAR2(100) NOT NULL,
+    description VARCHAR2(100)
+);
+
+CREATE TABLE out_tables (
+    name VARCHAR2(100) NOT NULL,
+    description VARCHAR2(100)
+);
+
+
+BEGIN
+    COMPARE_SCHEMAS('DEV', 'PROD');
+    COMPARE_OBJECTS('DEV', 'PROD', 'PROCEDURE');
+END;

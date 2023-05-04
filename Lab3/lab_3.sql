@@ -111,11 +111,12 @@ BEGIN
             dbms_output.put_line('There are no differences!');
         ELSE
             FOR tab IN (SELECT * FROM out_tables) LOOP
-                dbms_output.put_line(tab.name);
+                dbms_output.put_line(tab.name || ' - ' || tab.description);
             END LOOP;
         END IF;
     END IF;
 
+    -- task 2
     dbms_output.put_line(' ');
     dbms_output.put_line('_____________ Procedures Info _____________');
     dbms_output.put_line(' ');
@@ -243,6 +244,9 @@ BEGIN
         END LOOP;
     END IF;
 
+    dbms_output.put_line(' ');
+    dbms_output.put_line(' ');
+
     EXCEPTION
         WHEN OTHERS THEN
             dbms_output.put_line('ERROR | ' || SQLERRM);
@@ -276,3 +280,96 @@ BEGIN
         END LOOP;
     END IF;
 END check_cycle;
+
+-- task 3
+CREATE OR REPLACE PROCEDURE replace_object (
+    dev_schema_name IN VARCHAR2, 
+    prod_schema_name IN VARCHAR2, 
+    object_type IN VARCHAR2, 
+    object_name IN VARCHAR2
+) 
+AS
+    query_string VARCHAR2(1000); 
+BEGIN
+    FOR src IN (SELECT line, text FROM all_source WHERE owner=dev_schema_name AND name=object_name)
+    LOOP    
+        IF src.line =1 THEN
+            query_string := 'CREATE OR REPLACE ' || REPLACE(src.text, LOWER(object_name), prod_schema_name || '.' || object_name);
+        ELSE
+            query_string := query_string || src.text; 
+            END IF;
+    END LOOP;
+    
+    dbms_output.put_line(query_string);
+    -- EXECUTE IMMEDIATE query_string; 
+END replace_object;
+
+
+CREATE OR REPLACE PROCEDURE create_object (
+    dev_schema_name IN VARCHAR2,
+    prod_schema_name IN VARCHAR2,    
+    object_type IN VARCHAR2, 
+    object_name IN VARCHAR2
+) 
+AS
+    query_string VARCHAR2(1000); 
+BEGIN
+    FOR src IN (SELECT line, text FROM all_source WHERE owner=dev_schema_name AND NAME=object_name)
+    LOOP
+        IF src.line =1 THEN
+            query_string := 'CREATE ' || REPLACE(src.text, LOWER(object_name), prod_schema_name || '.' || object_name);
+        ELSE
+            query_string := query_string || src.text; 
+        END IF;
+    END LOOP;
+
+    dbms_output.put_line(query_string);
+    -- EXECUTE IMMEDIATE query_string; 
+END create_object;
+
+
+CREATE OR REPLACE PROCEDURE delete_object (
+    schema_name IN VARCHAR2, 
+    object_type IN VARCHAR2, 
+    object_name IN VARCHAR2
+)
+AS
+    delete_query VARCHAR(1000); 
+BEGIN
+    delete_query := 'DROP ' || object_type || ' ' || schema_name || '.' || object_name; 
+    
+    dbms_output.put_line(delete_query);
+    -- EXECUTE IMMEDIATE delete_query;
+END delete_object;
+
+
+CREATE OR REPLACE PROCEDURE compare_objects (
+    dev_schema_name IN VARCHAR2, 
+    prod_schema_name IN VARCHAR2, 
+    object_type IN VARCHAR2
+) 
+AS
+    diff NUMBER := 0; 
+BEGIN
+    FOR pair IN (SELECT obj1.NAME AS name1, obj2.NAME AS name2 FROM
+                    (SELECT object_name name FROM all_objects
+                        WHERE object_type=object_type AND owner=dev_schema_name) obj1 FULL JOIN
+                            (SELECT object_name name FROM all_objects
+                                WHERE object_type=object_type AND owner=prod_schema_name) obj2 ON obj1.name=obj2.name ) 
+    LOOP
+        IF pair.name1 IS NULL THEN
+            delete_object(prod_schema_name, object_type, pair.name2); 
+        ELSIF pair.name2 IS NULL THEN
+            create_object(dev_schema_name, prod_schema_name, object_type, pair.name1); 
+        ELSE
+            SELECT COUNT(*) INTO diff FROM all_source src1 
+                FULL JOIN all_source src2 ON src1.name=src2.name
+                    WHERE src1.name=pair.name1 AND src1.line=src2.line AND src1.text!=src2.text
+                        AND src1.owner=dev_schema_name AND src2.owner=prod_schema_name;
+            
+            IF diff > 0 THEN 
+                replace_object(dev_schema_name, prod_schema_name, object_type,pair.name1); 
+            END IF; 
+        END IF;
+    END LOOP;
+END compare_objects;
