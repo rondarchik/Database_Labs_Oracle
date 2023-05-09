@@ -237,13 +237,16 @@ AS
         WHERE date_time >= h_date
         ORDER BY id DESC;
     BEGIN
-        FOR rec IN hist(rollback_time) LOOP
-            IF rec.new_st_name IS NOT NULL OR rec.old_st_name IS NOT NULL 
+        FOR rec IN hist(rollback_time) 
+        LOOP
+            IF rec.table_name = 'STUDENTS'
             THEN
                 restore_students(rec);
-            ELSIF rec.new_class_name IS NOT NULL OR rec.old_class_name IS NOT NULL THEN
+            ELSIF rec.table_name = 'CLASSES'
+            THEN
                 restore_classes(rec);
-            ELSIF rec.new_group_name IS NOT NULL OR rec.old_group_name IS NOT NULL THEN
+            ELSIF rec.table_name = 'GROUPS'
+            THEN
                 restore_groups(rec);
             END IF;
             
@@ -260,4 +263,95 @@ END rollback_package;
 
 BEGIN
     rollback_package.rollback_changes (TO_TIMESTAMP('08-MAY-23 04.07.38.000000000 AM'));
+END;
+
+-- TASK 4
+CREATE OR REPLACE DIRECTORY dir AS '/my/directory/path';
+CONNECT sys/password@localhost/xepdb1 as sysdba;
+GRANT WRITE ON DIRECTORY dir TO Lab5;
+CONNECT Lab5/111@localhost/xepdb1;
+
+DECLARE
+    file UTL_FILE.FILE_TYPE;
+BEGIN
+    file := UTL_FILE.fopen('DIR', 'report.html', 'W');
+END;
+
+CREATE OR REPLACE PROCEDURE generate_report (desired_date TIMESTAMP)
+IS
+    file UTL_FILE.file_type;
+    buff VARCHAR(1000);
+
+    students_insert_count number;
+    students_delete_count number;
+    students_update_count number;
+
+    classes_insert_count number;
+    classes_delete_count number;
+    classes_update_count number;
+
+    groups_insert_count number;
+    groups_delete_count number;
+    groups_update_count number;
+BEGIN
+    file := UTL_FILE.fopen('DIR', 'report.html', 'W');
+
+    IF NOT UTL_FILE.IS_OPEN(file) THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Error: File report.html does not open!');
+    END IF;
+
+    buff := HTF.HTMLOPEN || CHR(10) || HTF.headopen || CHR(10) || HTF.title('Report')
+        || CHR(10) || HTF.headclose || CHR(10) ||HTF.bodyopen || CHR(10);
+
+    SELECT COUNT(*) INTO students_insert_count FROM History
+        WHERE description = 'INSERTING' AND table_name = 'STUDENTS' AND date_time >= desired_date;
+
+    SELECT COUNT(*) INTO students_update_count FROM History
+        WHERE description = 'UPDATING' AND table_name = 'STUDENTS' AND date_time >= desired_date;
+
+    SELECT COUNT(*) INTO students_delete_count FROM History
+        WHERE description = 'DELETING' AND table_name = 'STUDENTS' AND date_time >= desired_date;
+
+    SELECT COUNT(*) INTO classes_insert_count FROM History
+        WHERE description = 'INSERTING' AND table_name = 'CLASSES' AND date_time >= desired_date;
+
+    SELECT COUNT(*) INTO classes_update_count FROM History
+        WHERE description = 'UPDATING' AND table_name = 'CLASSES' AND date_time >= desired_date;
+
+    SELECT COUNT(*) INTO classes_delete_count FROM History
+        WHERE description = 'DELETING' AND table_name = 'CLASSES' AND date_time >= desired_date;
+
+    SELECT COUNT(*) INTO groups_insert_count FROM History
+        WHERE description = 'INSERTING' AND table_name = 'GROUPS' AND date_time >= desired_date;
+
+    SELECT COUNT(*) INTO groups_update_count FROM History
+        WHERE description = 'UPDATING' AND table_name = 'GROUPS' AND date_time >= desired_date;
+
+    SELECT COUNT(*) INTO groups_delete_count FROM History
+        WHERE description = 'DELETING' AND table_name = 'GROUPS' AND date_time >= desired_date;
+
+    buff := buff || HTF.TABLEOPEN || CHR(10) || HTF.TABLEROWOPEN || CHR(10) || HTF.TABLEHEADER('') || CHR(10) || HTF.TABLEHEADER('STUDENTS') || CHR(10) ||
+    HTF.TABLEHEADER('CLASSES') || CHR(10) || HTF.TABLEHEADER('GROUPS') || CHR(10) || HTF.TABLEROWCLOSE || CHR(10);
+
+    buff := buff || HTF.TABLEROWOPEN || CHR(10) || HTF.TABLEHEADER('INSERTING') || CHR(10) || HTF.TABLEDATA(students_insert_count) || CHR(10) ||
+    HTF.TABLEDATA(classes_insert_count) || CHR(10) || HTF.TABLEDATA(groups_insert_count) || CHR(10) || HTF.TABLEROWCLOSE || CHR(10);
+
+    buff := buff || HTF.TABLEROWOPEN || CHR(10) || HTF.TABLEHEADER('UPDATING') || CHR(10) || HTF.TABLEDATA(students_update_count) || CHR(10) ||
+    HTF.TABLEDATA(classes_update_count) || CHR(10) || HTF.TABLEDATA(groups_update_count) || CHR(10) || HTF.TABLEROWCLOSE || CHR(10);
+
+    buff := buff || HTF.TABLEROWOPEN || CHR(10) || HTF.TABLEHEADER('DELETING') || CHR(10) || HTF.TABLEDATA(students_delete_count) || CHR(10) ||
+    HTF.TABLEDATA(classes_delete_count) || CHR(10) || HTF.TABLEDATA(groups_delete_count) || CHR(10) || HTF.TABLEROWCLOSE || CHR(10);
+
+    buff := buff || HTF.TABLECLOSE || CHR(10) || HTF.bodyclose || CHR(10) || HTF.htmlclose;
+
+    UTL_FILE.put_line (file, buff);
+    UTL_FILE.fclose(file);
+
+    EXCEPTION WHEN NO_DATA_FOUND THEN
+        RAISE_APPLICATION_ERROR(-20002, 'Error in generate_report(). NO_DATA_FOUND');
+
+END generate_report;
+
+BEGIN
+    generate_report(TO_TIMESTAMP('08-MAY-23 04.07.38.000000000 AM'));
 END;
