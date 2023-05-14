@@ -1,7 +1,8 @@
--- 3.	DML: реализовать возможность в качестве структурированного файла 
--- передавать условия для генерации и выполнения запросов INSERT, UPDATE, DELETE, 
--- с реализацией возможности в качестве фильтра передавать как условия, 
--- так и подзапросы (Аналогично блоку 2)
+-- 4.	DDL: реализовать возможность генерации и выполнения DDL скриптов CREATE TABLE и DROP TABLE.     
+     -- В качестве входных данных - структурированный файл с определением DDL-команды, 
+     -- названием таблицы, в случае необходимости (перечнем полей и их типов).
+-- 5.	Доработать пункт 4 с тем, чтобы одновременно с созданием таблицы 
+     -- генерировался триггер по генерации значения первичного ключа. 
 
 CONNECT sys/password@localhost/xepdb1 as sysdba;
 CONNECT Lab4/111@localhost/xepdb1;
@@ -37,13 +38,50 @@ END get_value_from_xml;
 
 CREATE OR REPLACE PACKAGE xml_package 
 AS
-    FUNCTION process_select(xml_string IN VARCHAR2) RETURN sys_refcursor;
-    FUNCTION xml_select (xml_string IN VARCHAR2 ) RETURN VARCHAR2; 
-    FUNCTION where_property (xml_string IN VARCHAR2 ) RETURN VARCHAR2; 
-    FUNCTION xml_insert(xml_string IN VARCHAR2) RETURN VARCHAR2; 
-    FUNCTION xml_update(xml_string IN VARCHAR2) RETURN VARCHAR2; 
-    FUNCTION xml_delete(xml_string IN VARCHAR2) RETURN VARCHAR2;
+    FUNCTION process_select(xml_string IN VARCHAR2) RETURN sys_refcursor; 
+    FUNCTION xml_select (xml_string in VARCHAR2 ) RETURN VARCHAR2; 
+    FUNCTION where_property (xml_string in VARCHAR2 ) RETURN VARCHAR2; 
+    FUNCTION xml_insert(xml_string in VARCHAR2) RETURN VARCHAR2; 
+    FUNCTION xml_update(xml_string in VARCHAR2) RETURN VARCHAR2; 
+    FUNCTION xml_delete(xml_string in VARCHAR2) RETURN VARCHAR2; 
+    FUNCTION xml_drop(xml_string IN VARCHAR2) RETURN VARCHAR2;
+    FUNCTION xml_create(xml_string IN VARCHAR2) RETURN nvarchar2; 
 END;
+
+
+CREATE OR REPLACE FUNCTION auto_increment_generator(table_name in VARCHAR2) 
+    RETURN VARCHAR2
+AS
+    generated_script VARCHAR(1000); 
+BEGIN
+    generated_script := 'CREATE SEQUENCE ' || table_name || '_pk_seq' || ';' || CHR(10);
+    generated_script := generated_script                     || 
+                        'CREATE OR REPLACE TRIGGER '         || 
+                        table_name                           || 
+                        ' BEFORE INSERT ON '                 ||
+                        table_name                           || 
+                        ' FOR EACH ROW '                     || 
+                        CHR(10)                              || 
+                        'BEGIN '                             || 
+                        CHR(10)                              ||
+                        ' IF inserting THEN '                || 
+                        CHR(10)                              ||
+                        ' IF :NEW.ID IS NULL THEN '          || 
+                        CHR(10)                              ||
+                        ' SELECT '                           || 
+                        table_name                           || 
+                        '_pk_seq'                            || 
+                        '.nextval INTO :NEW.ID FROM dual; '  || 
+                        CHR(10)                              ||
+                        ' END IF; '                          || 
+                        CHR(10)                              || 
+                        ' END IF; '                          || 
+                        CHR(10)                              || 
+                        'END;';
+
+    RETURN generated_script; 
+END;
+
 
 CREATE OR REPLACE PACKAGE BODY xml_package 
 AS
@@ -122,6 +160,9 @@ AS
         i                   NUMBER         := 0; 
         records_length      NUMBER         := 0;
         where_filters       XMLRecord      := XMLRecord(); 
+        value1 NUMBER;
+        value2 NUMBER;
+        pattern VARCHAR2(100);
     BEGIN
         SELECT EXTRACT(XMLTYPE(xml_string), 'Operation/Where/Conditions/Condition').getStringVal() 
             INTO current_record FROM dual;
@@ -145,6 +186,15 @@ AS
             SELECT EXTRACTVALUE(XMLTYPE(where_filters(i)), 'Condition/Body') 
                 INTO condition_body FROM dual;
 
+            SELECT EXTRACTVALUE(XMLTYPE(where_filters(i)), 'Condition/LowerBound') 
+                INTO value1 FROM dual;
+
+            SELECT EXTRACTVALUE(XMLTYPE(where_filters(i)), 'Condition/UpperBound') 
+                INTO value2 FROM dual;
+
+            SELECT EXTRACTVALUE(XMLTYPE(where_filters(i)), 'Condition/Pattern') 
+                INTO pattern FROM dual;
+
             SELECT EXTRACT(XMLTYPE(where_filters(i)), 'Condition/Operation').getStringVal() 
                 INTO sub_query FROM dual;
 
@@ -157,15 +207,18 @@ AS
                 sub_query1:= '('|| sub_query1 || ')';
             END IF;
 
-            where_clouse := where_clouse              || 
-                            ' '                       || 
-                            TRIM(condition_body)      || 
-                            ' '                       || 
-                            sub_query1                || 
-                            TRIM(condition_operator)  || 
-                            ' ';
+            -- Условие BETWEEN
+            IF condition_operator = 'BETWEEN' THEN
+                where_clouse := where_clouse || ' ' || condition_body || ' BETWEEN ' || 
+                    value1 || ' AND ' || value2 || ' ';
+            -- Условие LIKE
+            ELSIF condition_operator = 'LIKE' THEN
+                where_clouse := where_clouse || ' ' || condition_body || ' LIKE ' ||
+                    '''' || pattern || '''' || ' ';
+            ELSE
+                where_clouse := where_clouse || ' ' || TRIM(condition_body) || ' ' || sub_query1 || TRIM(condition_operator) || ' ';
+            END IF;
         END LOOP;
-
 
         IF where_filters.count = 0 THEN 
             RETURN ' ';
@@ -265,4 +318,166 @@ AS
 
         RETURN delete_query;
     END xml_delete;
+    
+    FUNCTION xml_drop(xml_string IN VARCHAR2) RETURN VARCHAR2
+    AS
+        table_name VARCHAR2(100); 
+        drop_query VARCHAR2(1000) := 'DROP TABLE ';
+    BEGIN
+        SELECT EXTRACTVALUE(XMLTYPE(xml_string), 'Operation/Table') 
+            INTO table_name FROM dual;
+    
+        drop_query := drop_query || table_name || ';'; 
+    
+        RETURN drop_query;
+    END xml_drop;
+    
+    FUNCTION xml_create(xml_string IN VARCHAR2) RETURN nvarchar2
+    AS
+        col_type               VARCHAR(100); 
+        auto_increment_script  VARCHAR(1000); 
+        col_name               VARCHAR2(100); 
+        parent_table           VARCHAR2(100); 
+        constraint_value       VARCHAR2(100);
+        temporal_string        VARCHAR2(100);
+        table_name             VARCHAR2(100); 
+        current_record         VARCHAR2(1000); 
+        primary_constraint     VARCHAR2(1000); 
+        create_query           VARCHAR2(1000) := 'CREATE TABLE';
+        i                      NUMBER         := 0;
+        records_length         NUMBER         := 0;
+        table_columns          XMLRecord      := XMLRecord(); 
+        temporal_record        XMLRecord      := XMLRecord(); 
+        col_constraints        XMLRecord      := XMLRecord();
+        table_constraints      XMLRecord      := XMLRecord(); 
+    BEGIN
+        SELECT EXTRACTVALUE(XMLTYPE(xml_string), 'Operation/Table') 
+            INTO table_name FROM dual;
+    
+        create_query := create_query || ' ' || table_name || '(';
+    
+        SELECT EXTRACT(XMLTYPE(xml_string), 'Operation/Columns/Column').getStringVal() 
+            INTO current_record FROM dual;
+    
+        WHILE current_record IS NOT NULL 
+        LOOP 
+            i := i + 1;
+            records_length := records_length + 1;
+            table_columns.extend;
+            table_columns(records_length) := TRIM(current_record);
+    
+            SELECT EXTRACT(XMLTYPE(xml_string), 'Operation/Columns/Column'  ||
+                                                 '['                         || 
+                                                 i                           || 
+                                                 ']').getStringVal()
+                INTO current_record FROM dual;
+        END LOOP;
+    
+        FOR i in 2..table_columns.count 
+        LOOP 
+            constraint_value := '';
+    
+            SELECT EXTRACTVALUE(XMLTYPE(table_columns(i)), 'Column/Name') 
+                INTO col_name FROM dual;
+    
+            SELECT EXTRACTVALUE(XMLTYPE(table_columns(i)), 'Column/Type') 
+                INTO col_type FROM dual;
+    
+            col_constraints := get_value_from_xml(table_columns(i), 'Column/Constraints/Constraint');
+            
+            FOR i in 1..col_constraints.count 
+            LOOP
+                constraint_value := constraint_value || ' ' || col_constraints(i); 
+            END LOOP;
+            
+            create_query := create_query || ' ' || col_name || ' ' || col_type || constraint_value;
+    
+            IF i != table_columns.count THEN 
+                create_query := create_query || ', ';
+            END IF; 
+        END LOOP;
+    
+        SELECT EXTRACT(XMLTYPE(xml_string), 'Operation/TableConstraints/PrimaryKey').getStringVal()
+            INTO primary_constraint FROM dual;
+    
+        IF primary_constraint IS NOT NULL THEN 
+            temporal_record := get_value_from_xml(primary_constraint, 'PrimaryKey/Columns/Column'); 
+            temporal_string := temporal_record(1);
+    
+            FOR i in 2..temporal_record.count 
+            LOOP
+                temporal_string := temporal_string || ', ' || temporal_record(i); 
+            END LOOP;
+    
+            create_query := create_query     || 
+                            ', CONSTRAINT '  || 
+                            table_name       || 
+                            '_pk '           || 
+                            'PRIMARY KEY ('  || 
+                            temporal_string  || 
+                            ')';
+            ELSE
+                auto_increment_script := auto_increment_generator(table_name); 
+                create_query := create_query || ', ID NUMBER PRIMARY KEY';
+        END IF;
+    
+        table_constraints := XMLRecord(); 
+        records_length := 0;
+        i := 0;
+    
+        SELECT EXTRACT(XMLTYPE(xml_string), 'Operation/TableConstraints/ForeignKey').getStringVal() 
+            INTO current_record FROM dual;
+    
+        WHILE current_record IS NOT NULL 
+        LOOP 
+            i := i + 1;
+            records_length := records_length + 1; table_constraints.extend;
+            table_constraints(records_length) := TRIM(current_record);
+    
+            SELECT EXTRACT(XMLTYPE(xml_string), 'Operation/TableConstraints/ForeignKey'   ||
+                                                 '['                                       || 
+                                                 i                                         || 
+                                                 ']').getStringVal() 
+                INTO current_record FROM dual;
+        END LOOP;
+    
+        FOR i in 2..table_constraints.count 
+        LOOP
+            SELECT EXTRACTVALUE(XMLTYPE(table_constraints(i)), 'ForeignKey/Parent') 
+                INTO parent_table FROM dual;
+    
+            temporal_record := get_value_from_xml(table_constraints(i), 'ForeignKey/ChildColumns/Column');
+            temporal_string := temporal_record(1);
+    
+            FOR i in 2..temporal_record.count 
+            LOOP
+                temporal_string := temporal_string || ', ' || temporal_record(i); 
+            END LOOP;
+    
+            create_query := create_query     || 
+                            ', CONSTRAINT '  || 
+                            table_name       || 
+                            '_'              || 
+                            parent_table     || 
+                            '_fk '           || 
+                            'Foreign Key'    || 
+                            '('              || 
+                            temporal_string  || 
+                            ') ';
+            temporal_record := get_value_from_xml(table_constraints(i), 'ForeignKey/ChildColumns/Column');
+            temporal_string := temporal_record(1);
+    
+            FOR i in 2..temporal_record.count 
+            LOOP
+                temporal_string := temporal_string || ', ' || temporal_record(i); 
+            END LOOP;
+    
+            create_query:= create_query || 'REFERENCES ' || parent_table || '(' || temporal_string || ')';
+        END LOOP;
+    
+        create_query := create_query || ');' || auto_increment_script;
+        -- DBMS_OUTPUT.put_line(create_query);
+    
+        RETURN create_query; 
+    END xml_create;
 END xml_package;

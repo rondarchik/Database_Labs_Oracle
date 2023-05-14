@@ -114,7 +114,7 @@ BEGIN
     /*XML*/
     ); 
 END;
-    
+
 BEGIN
     DBMS_OUTPUT.put_line(xml_package.xml_select(read('select.xml')));
 END;
@@ -179,3 +179,46 @@ END;
 DELETE FROM students  WHERE id = 1  ;
 
 -- task 4-5
+BEGIN
+    DBMS_OUTPUT.put_line(xml_package.xml_create(read('create.xml')));
+END;
+
+DROP TABLE MYTABLE;
+Drop table other_table;
+
+CREATE TABLE other_table (id NUMBER UNIQUE, col_1 NUMBER UNIQUE,  col_2 VARCHAR(100) NOT NULL PRIMARY KEY);
+
+CREATE TABLE mytable( col_1 NUMBER,  col_2 VARCHAR(100) NOT NULL, CONSTRAINT
+mytable_pk PRIMARY KEY (col_1), CONSTRAINT mytable_other_table_fk Foreign
+Key(col_2) REFERENCES other_table(col_2));
+
+BEGIN
+    DBMS_OUTPUT.put_line(xml_package.xml_drop(read('drop.xml')));
+END;
+
+DROP TABLE mytable;
+
+DECLARE
+    generated_script VARCHAR(1000); 
+BEGIN
+    generated_script := auto_increment_generator('other_table'); 
+    DBMS_OUTPUT.put_line(generated_script);
+END;
+
+CREATE SEQUENCE other_table_pk_seq;
+CREATE OR REPLACE TRIGGER other_table BEFORE
+INSERT ON other_table FOR EACH ROW
+BEGIN
+ IF inserting THEN
+ IF :NEW.ID IS
+NULL THEN
+ SELECT other_table_pk_seq.nextval INTO :NEW.ID FROM dual;
+ END IF;
+
+ END IF;
+END;
+
+INSERT INTO other_table(col_1, col_2) VALUES(1, 'kkfkf');
+INSERT INTO other_table(col_1, col_2) VALUES(2, 'sjsjsw');
+
+SELECT * FROM other_table;

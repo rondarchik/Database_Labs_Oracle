@@ -43,3 +43,48 @@
         </Conditions>
     </Where>
 </Operation>
+
+<Operation>
+    <QueryType>SELECT</QueryType>
+    <OutputColumns>
+        <Column>students.id</Column>
+        <Column>students.name</Column>
+    </OutputColumns>
+    <Tables>
+        <Table>students</Table>
+    </Tables>
+    <Where>
+        <Conditions>
+            <Condition>
+                <Body>students.group_id IN</Body>
+                <Operation>
+                    <QueryType>SELECT</QueryType>
+                    <OutputColumns>
+                        <Column>id</Column>
+                    </OutputColumns>
+                    <Tables>
+                        <Table>groups</Table>
+                    </Tables>
+                    <Where>
+                        <Conditions>
+                            <Condition>
+                                <Body>name</Body>
+                                <ConditionOperator>LIKE</ConditionOperator>
+                                <Pattern>%3</Pattern>
+                            </Condition>
+                            <Condition>
+                                <ConditionOperator>OR</ConditionOperator>
+                            </Condition>
+                            <Condition>
+                                <Body>c_val</Body>
+                                <ConditionOperator>BETWEEN</ConditionOperator>
+                                <LowerBound>1</LowerBound>
+                                <UpperBound>3</UpperBound>
+                            </Condition>
+                        </Conditions>
+                    </Where>
+                </Operation>
+            </Condition>
+        </Conditions>
+    </Where>
+</Operation>
