@@ -8,7 +8,6 @@ GRANT ALL PRIVILEGES TO Lab4;
 
 CONNECT Lab4/111@localhost/xepdb1;
 
--- task 1-2
 DROP TABLE Students;
 DROP TABLE Groups;
 
@@ -80,10 +79,13 @@ INSERT INTO Students(name, group_id) VALUES('R', 3);
 SELECT * FROM Students;
 SELECT * FROM Groups;
 
+
+-- task 1-2
 DECLARE 
     cur  sys_refcursor;
 BEGIN
     cur := xml_package.process_select( 
+    /*XML*/
     '<Operation>
         <QueryType>SELECT</QueryType>
         <OutputColumns>
@@ -105,33 +107,75 @@ BEGIN
             <Conditions>
                 <Condition>
                     <Body>students.id = 1</Body>
-                    <ConditionOperator>OR</ConditionOperator>
-                </Condition>
-                <Condition>
-                    <Body>groups.name IN</Body>
-                    <Operation>
-                        <QueryType>SELECT</QueryType>
-                        <OutputColumns>
-                            <Column>name</Column>
-                        </OutputColumns>
-                        <Tables>
-                            <Table>groups</Table>
-                        </Tables>
-                        <Where>
-                            <Conditions>
-                                <Condition>
-                                    <Body>c_val = 3</Body>
-                                </Condition>
-                            </Conditions>
-                        </Where>
-                    </Operation>
                 </Condition>
             </Conditions>
         </Where>
     </Operation>'
+    /*XML*/
     ); 
 END;
     
+BEGIN
+    DBMS_OUTPUT.put_line(xml_package.xml_select(read('select.xml')));
+END;
+
 SELECT students.id, students.name, groups.id FROM students LEFT JOIN groups ON
     groups.id = students.group_id WHERE students.id = 1;
 
+SELECT name FROM groups WHERE c_val = 3;
+
+SELECT students.id, students.name, groups.id FROM students LEFT JOIN groups ON
+    groups.id = students.group_id WHERE students.id = 1 OR  groups.name IN 
+        (SELECT name FROM groups WHERE c_val = 3  );
+
+-- task 3
+CREATE OR REPLACE DIRECTORY dir AS 'D:/bsuir/db/Database_Labs_Oracle/Lab4';
+
+CREATE OR REPLACE FUNCTION read(fname VARCHAR2) 
+    RETURN VARCHAR2
+IS
+    file UTL_FILE.FILE_TYPE;
+    buff VARCHAR2(10000);
+    str VARCHAR2(500);
+BEGIN
+    file := UTL_FILE.FOPEN('DIR', fname, 'R');
+
+    IF NOT UTL_FILE.IS_OPEN(file) THEN
+        DBMS_OUTPUT.PUT_LINE('File ' || fname || ' does not open!');
+        RETURN NULL;
+    END IF;
+
+    LOOP
+        BEGIN
+            UTL_FILE.GET_LINE(file, str);
+            buff := buff || str;
+            
+            EXCEPTION
+                WHEN OTHERS THEN EXIT;
+        END;
+    END LOOP;
+    
+    UTL_FILE.FCLOSE(file);
+    RETURN buff;
+END read;
+
+BEGIN
+    DBMS_OUTPUT.put_line(xml_package.xml_insert(read('insert.xml')));
+END;
+
+INSERT INTO students(name, group_id) VALUES ('krtfds', 3);
+
+BEGIN
+    DBMS_OUTPUT.put_line(xml_package.xml_update(read('update.xml')));
+END;
+
+UPDATE students SET name='kate' WHERE students.id = 5 OR  group_id IN (SELECT id
+FROM groups WHERE c_val = 3  ) ;
+
+BEGIN
+    DBMS_OUTPUT.put_line(xml_package.xml_delete(read('delete.xml')));
+END;
+
+DELETE FROM students  WHERE id = 1  ;
+
+-- task 4-5

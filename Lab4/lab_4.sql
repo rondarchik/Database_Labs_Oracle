@@ -1,16 +1,9 @@
--- Разработать собственную структуру JSON либо XML формата.
--- Написать механизм, позволяющий реализовать на уровне АРМ механизм 
--- формирование и выполнение динамических SQL запросов:
--- 1.	SELECT: на вход подается JSON/XML (на выбор студента), 
-     -- где указан тип запроса (SELECT), наименования выходных столбцов, 
-     -- наименование таблиц, условия объединения таблиц для запроса, условия фильтрации. 
-     -- Необходимо реализовать парс входных данных формирование запроса и 
-     -- выполнение его, на выход отдать курсор.
--- 2.	Вложенные запросы: доработать пункт 1 с тем, 
-     -- чтобы в качестве условия фильтрации можно было бы передать 
-     -- вложенный запрос (условия IN, NOT IN, EXISTS, NOT EXISTS). 
-     -- Сформировать запрос, выполнить его, на выход передать курсор.
+-- 3.	DML: реализовать возможность в качестве структурированного файла 
+-- передавать условия для генерации и выполнения запросов INSERT, UPDATE, DELETE, 
+-- с реализацией возможности в качестве фильтра передавать как условия, 
+-- так и подзапросы (Аналогично блоку 2)
 
+CONNECT sys/password@localhost/xepdb1 as sysdba;
 CONNECT Lab4/111@localhost/xepdb1;
 
 DROP TYPE XMLRecord;
@@ -44,9 +37,12 @@ END get_value_from_xml;
 
 CREATE OR REPLACE PACKAGE xml_package 
 AS
-    FUNCTION xml_select(xml_string in VARCHAR2) RETURN VARCHAR2;
     FUNCTION process_select(xml_string IN VARCHAR2) RETURN sys_refcursor;
-    FUNCTION where_property(xml_string in VARCHAR2) RETURN VARCHAR2;
+    FUNCTION xml_select (xml_string IN VARCHAR2 ) RETURN VARCHAR2; 
+    FUNCTION where_property (xml_string IN VARCHAR2 ) RETURN VARCHAR2; 
+    FUNCTION xml_insert(xml_string IN VARCHAR2) RETURN VARCHAR2; 
+    FUNCTION xml_update(xml_string IN VARCHAR2) RETURN VARCHAR2; 
+    FUNCTION xml_delete(xml_string IN VARCHAR2) RETURN VARCHAR2;
 END;
 
 CREATE OR REPLACE PACKAGE BODY xml_package 
@@ -109,7 +105,7 @@ AS
         END LOOP;
 
         select_query := select_query || where_property(xml_string); 
-        DBMS_OUTPUT.PUT_LINE(select_query);
+        -- DBMS_OUTPUT.PUT_LINE(select_query);
 
         RETURN select_query; 
     END xml_select;
@@ -177,4 +173,96 @@ AS
             RETURN where_clouse; 
         END IF;
     END where_property;
+    
+    FUNCTION xml_insert(xml_string IN VARCHAR2) RETURN VARCHAR2
+    AS
+        insert_query            VARCHAR2(1000);
+        values_to_insert        VARCHAR2(1000); 
+        xml_columns             VARCHAR2(200);
+        table_name              VARCHAR(100); 
+        select_query_to_insert  VARCHAR(1000); 
+        xml_values              XMLRecord := XMLRecord(); 
+        xml_columns_list        XMLRecord := XMLRecord(); 
+    BEGIN
+        SELECT EXTRACT(XMLTYPE(xml_string), 'Operation/Values').getStringVal() 
+            INTO values_to_insert FROM dual;
+
+        SELECT EXTRACTVALUE(XMLTYPE(xml_string), 'Operation/Table') 
+            INTO table_name FROM dual;
+
+        xml_columns_list := get_value_from_xml(xml_string, 'Operation/Columns/Column'); 
+        xml_columns:='(' || xml_columns_list(1);
+
+        FOR i IN 2 .. xml_columns_list.count 
+        LOOP
+            xml_columns := xml_columns || ', ' || xml_columns_list(i); 
+        END LOOP;
+
+        xml_columns := xml_columns || ')';
+        insert_query := 'INSERT INTO ' || table_name ||xml_columns;
+
+        IF values_to_insert IS NOT NULL THEN
+            xml_values := get_value_from_xml(values_to_insert,'Values/Value');
+            insert_query := insert_query || ' VALUES' || ' (' || xml_values(1);
+
+            FOR i IN 2 .. xml_values.count 
+            LOOP
+                insert_query := insert_query || ', ' || xml_values(i); 
+            END LOOP;
+
+            insert_query := insert_query || ')';
+        ELSE
+            SELECT EXTRACT(XMLTYPE(xml_string), 'Operation/Operation').getStringVal() 
+                INTO select_query_to_insert FROM dual;
+
+            insert_query := insert_query || ' ' || xml_select(select_query_to_insert); 
+        END IF;
+
+        insert_query := insert_query || ';';
+        RETURN insert_query; 
+    END xml_insert;
+
+    FUNCTION xml_update(xml_string IN VARCHAR2) RETURN VARCHAR2
+    AS
+        table_name      VARCHAR(100);
+        set_operations  VARCHAR2(1000); 
+        update_query    VARCHAR2(1000) := 'UPDATE '; 
+        set_collection  XMLRecord      := XMLRecord(); 
+    BEGIN
+        SELECT EXTRACT(XMLTYPE(xml_string), 'Operation/SetOperations').getStringVal() 
+            INTO set_operations FROM dual;
+
+        SELECT EXTRACTVALUE(XMLTYPE(xml_string), 'Operation/Table') 
+            INTO table_name FROM dual;
+
+        set_collection := get_value_from_xml(set_operations,'SetOperations/Set'); 
+        update_query := update_query || table_name || ' SET ' || set_collection(1);
+
+        FOR i IN 2..set_collection.count 
+        LOOP
+            update_query := update_query || ',' || set_collection(i);
+        END LOOP;
+
+        update_query := update_query || where_property(xml_string); 
+
+        update_query := update_query || ';';
+        RETURN update_query;
+    END xml_update;
+
+    FUNCTION xml_delete(xml_string IN VARCHAR2) RETURN VARCHAR2 
+    AS
+        table_name    VARCHAR(100); 
+        delete_query  VARCHAR2(1000) := 'DELETE FROM ';
+    BEGIN
+        SELECT EXTRACTVALUE(XMLTYPE(xml_string), 'Operation/Table') 
+            INTO table_name  FROM dual;
+
+        delete_query := delete_query                || 
+                        table_name                  || 
+                        ' '                         || 
+                        where_property(xml_string)  || 
+                        ';'; 
+
+        RETURN delete_query;
+    END xml_delete;
 END xml_package;

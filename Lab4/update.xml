@@ -1,32 +1,21 @@
 <Operation>
-    <QueryType>SELECT</QueryType>
-    <OutputColumns>
-        <Column>students.id</Column>
-        <Column>students.name</Column>
-        <Column>groups.id</Column>
-    </OutputColumns>
-    <Tables>
-        <Table>students</Table>
-        <Table>groups</Table>
-    </Tables>
-    <Joins>
-        <Join>
-            <Type>LEFT JOIN</Type>
-            <Condition>groups.id = students.group_id</Condition>
-        </Join>
-    </Joins>
+    <Type>UPDATE</Type>
+    <Table>students</Table>
+    <SetOperations>
+        <Set>name = 'kate'</Set>
+    </SetOperations>
     <Where>
         <Conditions>
             <Condition>
-                <Body>students.id = 1</Body>
+                <Body>students.id = 5</Body>
                 <ConditionOperator>OR</ConditionOperator>
             </Condition>
             <Condition>
-                <Body>groups.name IN</Body>
+                <Body>group_id IN</Body>
                 <Operation>
                     <QueryType>SELECT</QueryType>
                     <OutputColumns>
-                        <Column>name</Column>
+                        <Column>id</Column>
                     </OutputColumns>
                     <Tables>
                         <Table>groups</Table>
